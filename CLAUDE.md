@@ -35,7 +35,7 @@ Subagentes em [.claude/agents/](.claude/agents/): `spec-implementer`, `spec-revi
 - `ItemOrcamento` guarda snapshot de descrição, unidade e custo. Reimportar base não altera orçamentos.
 - Sem `any` explícito, sem `@ts-ignore`. TypeScript `strict`.
 - Toda entrada de API validada com Zod (`src/schemas/`). Erros no formato `{ error: { code, message, details? } }`.
-- Entidades e domínio em português (`Insumo`, `Composicao`, `Orcamento`); infraestrutura pode ser em inglês.
+- Entidades, domínio e banco de dados em **inglês**: models, campos e funções/variáveis de domínio em `camelCase` (`Resource`, `Composition`, `Budget`); tabelas e colunas do banco em `snake_case` via `@map`/`@@map` do Prisma. UI continua em pt-BR.
 - UI em pt-BR; moeda com `Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })`.
 
 ## Comandos do projeto

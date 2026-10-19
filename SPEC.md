@@ -78,8 +78,8 @@ sinapse/
 │   ├── components/
 │   ├── domain/                 # regras de negócio puras
 │   │   ├── bdi/
-│   │   ├── curva-abc/
-│   │   └── orcamento/
+│   │   ├── abc-curve/
+│   │   └── budget/
 │   ├── importers/sinapi/       # parser + normalização
 │   ├── lib/                    # prisma client, decimal helpers, query client
 │   ├── schemas/                # schemas Zod compartilhados front/back
@@ -90,7 +90,7 @@ sinapse/
 └── SPEC.md
 ```
 
-Nomes de entidades e regras de domínio em **português** (`Insumo`, `Composicao`, `Orcamento`). Código de infraestrutura e utilitários pode ficar em inglês.
+Nomes de entidades e regras de domínio em **inglês, camelCase** (`Resource`, `Composition`, `Budget`). Tabelas e colunas do banco em **snake_case**, via `@map`/`@@map` do Prisma. UI continua em pt-BR.
 
 ---
 
@@ -100,104 +100,117 @@ Rascunho do `schema.prisma`. Ajuste se necessário, mas mantenha as constraints 
 
 ```prisma
 enum Regime {
-  DESONERADO
-  NAO_DESONERADO
+  EXEMPT
+  NON_EXEMPT
 }
 
-enum TipoItem {
-  INSUMO
-  COMPOSICAO
+enum ItemType {
+  RESOURCE
+  COMPOSITION
 }
 
-model BaseReferencia {
-  id           String   @id @default(cuid())
-  uf           String   @db.Char(2)
-  referencia   DateTime @db.Date      // sempre dia 1 do mês (ex.: 2026-09-01)
-  regime       Regime
-  importadoEm  DateTime @default(now())
-  insumos      PrecoInsumo[]
-  composicoes  CustoComposicao[]
-  orcamentos   Orcamento[]
+model ReferenceBase {
+  id               String            @id @default(cuid())
+  state            String            @db.Char(2)
+  referenceDate    DateTime          @db.Date @map("reference_date")    // sempre dia 1 do mês (ex.: 2026-09-01)
+  regime           Regime
+  importedAt       DateTime          @default(now()) @map("imported_at")
+  resourcePrices   ResourcePrice[]
+  compositionCosts CompositionCost[]
+  budgets          Budget[]
 
-  @@unique([uf, referencia, regime])
+  @@unique([state, referenceDate, regime])
+  @@map("reference_bases")
 }
 
-model Insumo {
-  id         String @id @default(cuid())
-  codigo     String @unique
-  descricao  String
-  unidade    String
-  precos     PrecoInsumo[]
+model Resource {
+  id          String          @id @default(cuid())
+  code        String          @unique
+  description String
+  unit        String
+  prices      ResourcePrice[]
+
+  @@map("resources")
 }
 
-model PrecoInsumo {
-  id         String         @id @default(cuid())
-  insumoId   String
-  baseId     String
-  preco      Decimal        @db.Decimal(14, 4)
-  insumo     Insumo         @relation(fields: [insumoId], references: [id])
-  base       BaseReferencia @relation(fields: [baseId], references: [id], onDelete: Cascade)
+model ResourcePrice {
+  id         String        @id @default(cuid())
+  resourceId String        @map("resource_id")
+  baseId     String        @map("base_id")
+  price      Decimal       @db.Decimal(14, 4)
+  resource   Resource      @relation(fields: [resourceId], references: [id])
+  base       ReferenceBase @relation(fields: [baseId], references: [id], onDelete: Cascade)
 
-  @@unique([insumoId, baseId])
+  @@unique([resourceId, baseId])
+  @@map("resource_prices")
 }
 
-model Composicao {
-  id         String @id @default(cuid())
-  codigo     String @unique
-  descricao  String
-  unidade    String
-  grupo      String?
-  custos     CustoComposicao[]
+model Composition {
+  id          String            @id @default(cuid())
+  code        String            @unique
+  description String
+  unit        String
+  group       String?
+  costs       CompositionCost[]
+
+  @@map("compositions")
 }
 
-model CustoComposicao {
-  id            String         @id @default(cuid())
-  composicaoId  String
-  baseId        String
-  custoTotal    Decimal        @db.Decimal(14, 4)
-  composicao    Composicao     @relation(fields: [composicaoId], references: [id])
-  base          BaseReferencia @relation(fields: [baseId], references: [id], onDelete: Cascade)
+model CompositionCost {
+  id            String        @id @default(cuid())
+  compositionId String        @map("composition_id")
+  baseId        String        @map("base_id")
+  totalCost     Decimal       @db.Decimal(14, 4) @map("total_cost")
+  composition   Composition   @relation(fields: [compositionId], references: [id])
+  base          ReferenceBase @relation(fields: [baseId], references: [id], onDelete: Cascade)
 
-  @@unique([composicaoId, baseId])
+  @@unique([compositionId, baseId])
+  @@map("composition_costs")
 }
 
-model Orcamento {
-  id          String         @id @default(cuid())
-  nome        String
-  cliente     String?
-  baseId      String
-  bdi         Decimal        @db.Decimal(8, 6)   // fração: 0.2624 = 26,24%
-  bdiParams   Json?                               // parâmetros usados no cálculo
-  criadoEm    DateTime       @default(now())
-  atualizadoEm DateTime      @updatedAt
-  base        BaseReferencia @relation(fields: [baseId], references: [id])
-  etapas      Etapa[]
+model Budget {
+  id        String        @id @default(cuid())
+  name      String
+  client    String?
+  baseId    String        @map("base_id")
+  bdi       Decimal       @db.Decimal(8, 6)    // fração: 0.2624 = 26,24%
+  bdiParams Json?         @map("bdi_params")    // parâmetros usados no cálculo
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+  base      ReferenceBase @relation(fields: [baseId], references: [id])
+  stages    Stage[]
+
+  @@map("budgets")
 }
 
-model Etapa {
-  id           String    @id @default(cuid())
-  orcamentoId  String
-  ordem        Int
-  nome         String
-  orcamento    Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
-  itens        ItemOrcamento[]
+model Stage {
+  id       String       @id @default(cuid())
+  budgetId String       @map("budget_id")
+  order    Int
+  name     String
+  budget   Budget       @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  items    BudgetItem[]
+
+  @@map("stages")
 }
 
-model ItemOrcamento {
-  id            String   @id @default(cuid())
-  etapaId       String
-  ordem         Int
-  tipo          TipoItem
-  codigo        String                         // código SINAPI do insumo ou composição
-  descricao     String                         // snapshot no momento da inclusão
-  unidade       String
-  quantidade    Decimal  @db.Decimal(14, 4)
-  custoUnitario Decimal  @db.Decimal(14, 4)    // snapshot do custo na base do orçamento
-  etapa         Etapa    @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+model BudgetItem {
+  id          String   @id @default(cuid())
+  stageId     String   @map("stage_id")
+  order       Int
+  type        ItemType
+  code        String                          // código SINAPI do insumo ou composição
+  description String                          // snapshot no momento da inclusão
+  unit        String
+  quantity    Decimal  @db.Decimal(14, 4)
+  unitCost    Decimal  @db.Decimal(14, 4) @map("unit_cost")    // snapshot do custo na base do orçamento
+  stage       Stage    @relation(fields: [stageId], references: [id], onDelete: Cascade)
+
+  @@map("budget_items")
 }
 ```
 
-**Decisão importante:** `ItemOrcamento` guarda um **snapshot** de descrição, unidade e custo unitário. Reimportar uma base não deve alterar orçamentos existentes.
+**Decisão importante:** `BudgetItem` guarda um **snapshot** de descrição, unidade e custo unitário. Reimportar uma base não deve alterar orçamentos existentes.
 
 No MVP, as composições usam o **custo total publicado pelo SINAPI**. A abertura analítica (coeficientes de cada insumo dentro da composição) fica para uma spec futura.
 
@@ -210,21 +223,21 @@ Todas em `src/domain/`, usando `Decimal`. Arredondamento apenas na **apresentaç
 ### 6.1 Item do orçamento
 
 ```
-custoTotalItem = quantidade × custoUnitario
-precoUnitario  = custoUnitario × (1 + bdi)
-precoTotalItem = quantidade × precoUnitario
+totalItemCost  = quantity × unitCost
+unitPrice      = unitCost × (1 + bdi)
+totalItemPrice = quantity × unitPrice
 ```
 
 ### 6.2 Totais
 
 ```
-custoTotalEtapa     = Σ custoTotalItem da etapa
-custoTotalOrcamento = Σ custoTotalEtapa
-precoTotalOrcamento = custoTotalOrcamento × (1 + bdi)
-pesoEtapa (%)       = custoTotalEtapa / custoTotalOrcamento
+totalStageCost  = Σ totalItemCost da etapa
+totalBudgetCost = Σ totalStageCost
+totalBudgetPrice = totalBudgetCost × (1 + bdi)
+stageWeight (%) = totalStageCost / totalBudgetCost
 ```
 
-Se `custoTotalOrcamento` for zero, `pesoEtapa` = 0 (sem divisão por zero).
+Se `totalBudgetCost` for zero, `stageWeight` = 0 (sem divisão por zero).
 
 ### 6.3 BDI (fórmula de referência do TCU)
 
@@ -254,7 +267,7 @@ O usuário pode **informar o BDI diretamente** ou **calcular pelos parâmetros**
 
 ### 6.4 Curva ABC de serviços
 
-1. Agrupar itens do orçamento por `codigo` + `tipo`, somando `custoTotalItem` (o mesmo serviço pode aparecer em várias etapas).
+1. Agrupar itens do orçamento por `code` + `type`, somando `totalItemCost` (o mesmo serviço pode aparecer em várias etapas).
 2. Ordenar por custo total, decrescente.
 3. Calcular percentual individual e percentual acumulado sobre o custo total do orçamento.
 4. Classificar pelo percentual acumulado **antes** de somar o item:
@@ -297,13 +310,13 @@ Casos de teste mínimos: orçamento vazio, um único item (deve ser A), itens re
 | --- | --- |
 | `/` | Dashboard simples: bases importadas e últimos orçamentos |
 | `/bases` | Lista de bases importadas + formulário de importação |
-| `/catalogo` | Busca de insumos e composições por código/descrição, filtrando por base |
-| `/orcamentos` | Lista de orçamentos (criar, duplicar, excluir) |
-| `/orcamentos/novo` | Formulário: nome, cliente, base de referência, BDI |
-| `/orcamentos/[id]` | Editor do orçamento (ver abaixo) |
-| `/orcamentos/[id]/abc` | Curva ABC em tabela + gráfico de Pareto simples |
+| `/catalog` | Busca de insumos e composições por código/descrição, filtrando por base |
+| `/budgets` | Lista de orçamentos (criar, duplicar, excluir) |
+| `/budgets/new` | Formulário: nome, cliente, base de referência, BDI |
+| `/budgets/[id]` | Editor do orçamento (ver abaixo) |
+| `/budgets/[id]/abc` | Curva ABC em tabela + gráfico de Pareto simples |
 
-### Editor do orçamento (`/orcamentos/[id]`)
+### Editor do orçamento (`/budgets/[id]`)
 
 - Etapas em blocos colapsáveis, com subtotal e peso percentual.
 - Adicionar / renomear / reordenar / excluir etapas.
@@ -326,21 +339,21 @@ Route handlers em `src/app/api/`. Toda entrada validada com schemas Zod de `src/
 | GET | `/api/bases` | Lista bases |
 | POST | `/api/bases/import` | Upload e importação (multipart) |
 | DELETE | `/api/bases/:id` | Remove base (bloquear se houver orçamentos vinculados) |
-| GET | `/api/catalogo?baseId=&q=&tipo=&page=` | Busca paginada |
-| GET | `/api/orcamentos` | Lista |
-| POST | `/api/orcamentos` | Cria |
-| GET | `/api/orcamentos/:id` | Detalhe com etapas, itens e totais calculados |
-| PATCH | `/api/orcamentos/:id` | Atualiza dados gerais e BDI |
-| DELETE | `/api/orcamentos/:id` | Exclui |
-| POST | `/api/orcamentos/:id/duplicar` | Duplica orçamento completo |
-| POST | `/api/orcamentos/:id/etapas` | Cria etapa |
-| PATCH / DELETE | `/api/etapas/:id` | Atualiza / exclui etapa |
-| POST | `/api/etapas/:id/itens` | Adiciona item (busca custo na base e grava snapshot) |
-| PATCH / DELETE | `/api/itens/:id` | Atualiza quantidade / exclui item |
-| GET | `/api/orcamentos/:id/abc` | Curva ABC |
-| GET | `/api/orcamentos/:id/export.xlsx` | Exportação Excel |
+| GET | `/api/catalog?baseId=&q=&type=&page=` | Busca paginada |
+| GET | `/api/budgets` | Lista |
+| POST | `/api/budgets` | Cria |
+| GET | `/api/budgets/:id` | Detalhe com etapas, itens e totais calculados |
+| PATCH | `/api/budgets/:id` | Atualiza dados gerais e BDI |
+| DELETE | `/api/budgets/:id` | Exclui |
+| POST | `/api/budgets/:id/duplicate` | Duplica orçamento completo |
+| POST | `/api/budgets/:id/stages` | Cria etapa |
+| PATCH / DELETE | `/api/stages/:id` | Atualiza / exclui etapa |
+| POST | `/api/stages/:id/items` | Adiciona item (busca custo na base e grava snapshot) |
+| PATCH / DELETE | `/api/items/:id` | Atualiza quantidade / exclui item |
+| GET | `/api/budgets/:id/abc` | Curva ABC |
+| GET | `/api/budgets/:id/export.xlsx` | Exportação Excel |
 
-A busca no catálogo deve usar índice adequado (ex.: `pg_trgm` em `descricao`) para responder rápido com dezenas de milhares de registros.
+A busca no catálogo deve usar índice adequado (ex.: `pg_trgm` em `description`) para responder rápido com dezenas de milhares de registros.
 
 ### Exportação Excel
 
